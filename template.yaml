@@ -1,0 +1,209 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  LogRetentionInDays:
+    Type: Number
+    Description: The number of days to keep logs in CloudWatch
+    Default: 14
+    AllowedValues: [ 1, 7, 14, 30, 60, 90, 120 ]
+
+# Conditions:
+
+
+Outputs:
+  BucketDomain:
+    Value: !GetAtt  ContentBucket.DomainName
+
+  CloudFrontDomain:
+    Value: !GetAtt CloudfrontDistro.DomainName
+
+Resources:
+  ContentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      # AccessControl: PublicRead
+      PublicAccessBlockConfiguration:
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+      WebsiteConfiguration:
+        IndexDocument: 'index.html'
+        ErrorDocument: 'index.html'
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+
+  ContentBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ContentBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - s3:GetObject
+            Resource: !Sub 'arn:${AWS::Partition}:s3:::${ContentBucket}/redir/*'
+
+  OriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: 'redirectr storage bucket OAI'
+
+  CloudfrontDistro:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Origins:
+          - Id: S3BucketOrigin
+            DomainName: !Select [2, !Split ['/', !GetAtt ContentBucket.WebsiteURL]]
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+              HTTPPort: 80
+              HTTPSPort: 443
+            OriginPath: /redir
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachePolicyId: '658327ea-f89d-4fab-a63d-7e88639e58f6' # Id for CachingOptimized
+          TargetOriginId: S3BucketOrigin
+          ViewerProtocolPolicy: redirect-to-https
+        CacheBehaviors:
+          - PathPattern: '/admin/*'
+            TargetOriginId: S3BucketOrigin
+            ForwardedValues:
+              QueryString: false
+            ViewerProtocolPolicy: redirect-to-https
+
+  ApiFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'lambda.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: logs
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:*
+                Resource: arn:aws:logs:*:*:* # TODO restrict
+
+        - PolicyName: s3
+          PolicyDocument:
+            Statement:
+              # - Effect: Allow
+              #   Action:
+              #     - s3:ListAllMyBuckets
+              #   Resource: 'arn:aws:s3:::*'
+
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket*
+                Resource: !Sub ${ContentBucket.Arn}
+
+              - Effect: Allow
+                Action:
+                  - s3:DeleteObject*
+                  - s3:GetObject*
+                  - s3:PutObject*
+                Resource: !Sub ${ContentBucket.Arn}/redir/*
+
+  ServerlessApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        # AllowOrigins:
+        #   - !Sub 'https://${S3WebsiteStack.Outputs.CloudfrontEndpoint}'
+        #   - !Sub 'https://${S3WebsiteStack.Outputs.FullDomain}'
+        AllowHeaders:
+          - '*'
+        AllowMethods:
+          - DELETE
+          - GET
+          - OPTIONS
+          - POST
+          - PUT
+        ExposeHeaders:
+          - '*'
+        MaxAge: 600
+        AllowCredentials: True
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: nodejs18.x
+      Handler: index.handler
+      InlineCode: |
+          const { PutObjectCommand, S3Client } = require('@aws-sdk/client-s3');
+
+          const s3 = new S3Client({ region: 'us-east-1' }); // TODO: Get from env?
+
+          exports.handler = async function (event, context) {
+            console.log('event', event);
+            console.log('context', context);
+            console.log('env', process.env);
+
+            // TODO: Generate random short string if not provided
+            // TODO: validate/sanitize inputs
+
+            // TODO: Check for base64 encoding
+            var request = JSON.parse(event.body);
+
+            var cmd = new PutObjectCommand({
+              Bucket: process.env.AWS_BucketName,
+              Key: `redir/${request.shortUrl}`,
+              // Key: `redir/1234`,
+              // Metadata: {
+              //  "x-amz-website-redirect-location": request.destinationUrl,
+              // },
+              Body: '',
+              WebsiteRedirectLocation: request.destinationUrl,
+            });
+
+            await s3.send(cmd);
+            return JSON.stringify({ "status": "ok" });
+          }
+
+      Role: !Sub ${ApiFunctionRole.Arn}
+      Environment:
+        Variables:
+          AWS_BucketName: !Ref ContentBucket
+      Events:
+        ProxyResource:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ServerlessApi
+            Path: '/'
+            Method: POST
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            - W3002 # Okay with code as string for now
+            - E3030 # Specified valid value according to CFN docs
+
+  ApiFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ApiFunction}'
+      RetentionInDays: !Ref LogRetentionInDays
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            - I3011 # Ignore update/delete policy warnings
+
+  # CloudFront Distro
+  # Lambda Function (admin API)
+  # API Gateway
+  # Cognito?

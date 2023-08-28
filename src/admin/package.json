@@ -1,0 +1,14 @@
+{
+  "name": "redirectr-admin-api",
+  "version": "1.0.0",
+  "description": "A simple API to write redirect objects to S3",
+  "main": "handler.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Matt Millican, aka M2Dev",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.398.0"
+  }
+}
