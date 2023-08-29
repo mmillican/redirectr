@@ -2,27 +2,35 @@ const { PutObjectCommand, S3Client } = require('@aws-sdk/client-s3');
 
 const s3 = new S3Client({ region: 'us-east-1' }); // TODO: Get from env?
 
-exports.handler = async function (event, context) {
-  console.log('event', event);
-  console.log('context', context);
-  console.log('env', process.env);
+function generateSlug(length) {
+  let slug = '';
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
-  // TODO: Generate random short string if not provided
+  for(var idx = 0; idx < length; idx++) {
+    slug += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+
+  return slug;
+}
+
+exports.handler = async function (event) {
+  console.log('event', event);
+
   // TODO: validate/sanitize inputs
 
   // TODO: Check for base64 encoding
   var request = JSON.parse(event.body);
 
+  if (!request.shortUrl) {
+    request.shortUrl = generateSlug(6);
+  }
   var cmd = new PutObjectCommand({
     Bucket: process.env.AWS_BucketName,
     Key: `redir/${request.shortUrl}`,
-    Metadata: {
-      "website-redirect-location": request.destinationUrl,
-    },
     Body: '',
+    WebsiteRedirectLocation: request.destinationUrl,
   });
 
   await s3.send(cmd);
-  return JSON.stringify({ "status": "ok" });
+  return JSON.stringify({ "shortUrl": request.shortUrl, "url": `https://${process.env.AWS_CloudFrontDomain}/${request.shortUrl}` });
 }
-
