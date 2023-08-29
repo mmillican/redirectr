@@ -8,7 +8,8 @@ Parameters:
     Default: 14
     AllowedValues: [ 1, 7, 14, 30, 60, 90, 120 ]
 
-# Conditions:
+
+  # TODO: Support optional custom domain names
 
   DnsHostedZoneId:
     Type: String
