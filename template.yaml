@@ -10,6 +10,25 @@ Parameters:
 
 # Conditions:
 
+  DnsHostedZoneId:
+    Type: String
+    Description: The Route53 hosted zone ID to create the DNS record for
+    Default: ''
+
+  DomainName:
+    Type: String
+    Description: The zone name for the DNS name. Required if specifying a Hosted Zone ID
+    Default: ''
+
+  AcmCertificateArn:
+    Type: String
+    Description: The ARN of the ACM certificate to use for the CloudFront distribution
+    Default: ''
+
+Conditions:
+
+  HasHostedZoneId: !Not [ !Equals [ !Ref DnsHostedZoneId, '' ] ]
+  HasDomainName: !Not [ !Equals [ !Ref DomainName, '' ] ]
 
 Outputs:
   BucketDomain:
@@ -55,6 +74,8 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
+        Aliases:
+          - !Ref DomainName
         Origins:
           - Id: S3BucketOrigin
             DomainName: !Select [2, !Split ['/', !GetAtt ContentBucket.WebsiteURL]]
@@ -77,6 +98,9 @@ Resources:
             ForwardedValues:
               QueryString: false
             ViewerProtocolPolicy: redirect-to-https
+        ViewerCertificate:
+          AcmCertificateArn: !Ref AcmCertificateArn
+          SslSupportMethod: sni-only
 
   ApiFunctionRole:
     Type: AWS::IAM::Role
@@ -178,14 +202,17 @@ Resources:
           });
 
           await s3.send(cmd);
-          return JSON.stringify({ "shortUrl": request.shortUrl, "url": `https://${process.env.AWS_CloudFrontDomain}/${request.shortUrl}` });
+          return JSON.stringify({ "shortUrl": request.shortUrl, "url": `https://${process.env.HostName}/${request.shortUrl}` });
         }
 
       Role: !Sub ${ApiFunctionRole.Arn}
       Environment:
         Variables:
           AWS_BucketName: !Ref ContentBucket
-          AWS_CloudFrontDomain: !GetAtt CloudfrontDistro.DomainName
+          HostName: !If
+            - HasDomainName
+            - !Ref DomainName
+            - !GetAtt CloudfrontDistro.DomainName
       Events:
         ProxyResource:
           Type: HttpApi
@@ -211,6 +238,17 @@ Resources:
           ignore_checks:
             - I3011 # Ignore update/delete policy warnings
 
+  Route53Records:
+    Type: AWS::Route53::RecordSetGroup
+    Condition: HasHostedZoneId
+    Properties:
+      HostedZoneId: !Ref DnsHostedZoneId
+      RecordSets:
+        - Name: !Ref DomainName
+          Type: A
+          AliasTarget:
+            HostedZoneId: Z2FDTNDATAQYW2
+            DNSName: !GetAtt CloudfrontDistro.DomainName
   # CloudFront Distro
   # Lambda Function (admin API)
   # API Gateway
