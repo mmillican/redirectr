@@ -26,6 +26,14 @@ Parameters:
     Description: The ARN of the ACM certificate to use for the CloudFront distribution
     Default: ''
 
+  UserPoolId:
+    Type: String
+    Description: The ID of the User Pool to use for authenticating the API
+
+  UserPoolApiClientId:
+    Type: String
+    Description: The client id of the api
+
 Conditions:
 
   HasHostedZoneId: !Not [ !Equals [ !Ref DnsHostedZoneId, '' ] ]
@@ -75,6 +83,7 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
+        Comment: redirectr CloudFront
         Aliases:
           - !Ref DomainName
         Origins:
@@ -146,6 +155,16 @@ Resources:
   ServerlessApi:
     Type: AWS::Serverless::HttpApi
     Properties:
+      Auth:
+        DefaultAuthorizer: OAuth2Authorizer
+        Authorizers:
+          # Cognito authorizer only works for rest apis
+          OAuth2Authorizer:
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPoolId}
+              audience:
+                - !Ref UserPoolApiClientId
+            IdentitySource: "$request.header.Authorization"
       CorsConfiguration:
         # AllowOrigins:
         #   - !Sub 'https://${S3WebsiteStack.Outputs.CloudfrontEndpoint}'
@@ -215,12 +234,17 @@ Resources:
             - !Ref DomainName
             - !GetAtt CloudfrontDistro.DomainName
       Events:
-        ProxyResource:
+        HttpApiEvent:
           Type: HttpApi
           Properties:
             ApiId: !Ref ServerlessApi
-            Path: '/'
+            Path: '/urls'
             Method: POST
+            Auth:
+              Authorizer: OAuth2Authorizer
+              AuthorizationScopes:
+                - api://redirectr-api/urls.read
+                - api://redirectr-api/urls.write
     Metadata:
       cfn-lint:
         config:
