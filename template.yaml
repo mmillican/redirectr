@@ -46,6 +46,12 @@ Outputs:
   CloudFrontDomain:
     Value: !GetAtt CloudfrontDistro.DomainName
 
+  CognitoAuthUrl:
+    Value: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPoolId}
+
+  CognitoAdminClientId:
+    Value: !Ref CognitoWebAppClient
+
 Resources:
   ContentBucket:
     Type: AWS::S3::Bucket
@@ -263,6 +269,32 @@ Resources:
           ignore_checks:
             - I3011 # Ignore update/delete policy warnings
 
+  # TODO: Add Cognito API Client
+
+  CognitoWebAppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPoolId
+      ClientName: Redirectr Admin
+      CallbackURLs:
+        - http://localhost:5173/oidc-callback # TODO: use paramter or add additional values
+      LogoutURLs:
+        - http://localhost:5173/
+      SupportedIdentityProviders:
+        - COGNITO
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - openid
+        - profile
+        - email
+      AllowedOAuthFlows:
+        - code
+      ExplicitAuthFlows:
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+
   Route53Records:
     Type: AWS::Route53::RecordSetGroup
     Condition: HasHostedZoneId
@@ -275,6 +307,3 @@ Resources:
             HostedZoneId: Z2FDTNDATAQYW2
             DNSName: !GetAtt CloudfrontDistro.DomainName
   # CloudFront Distro
-  # Lambda Function (admin API)
-  # API Gateway
-  # Cognito?
