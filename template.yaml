@@ -170,13 +170,18 @@ Resources:
               issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPoolId}
               audience:
                 - !Ref UserPoolApiClientId
+                - !Ref CognitoWebAppClient
             IdentitySource: "$request.header.Authorization"
       CorsConfiguration:
-        # AllowOrigins:
-        #   - !Sub 'https://${S3WebsiteStack.Outputs.CloudfrontEndpoint}'
-        #   - !Sub 'https://${S3WebsiteStack.Outputs.FullDomain}'
+        AllowOrigins:
+          - 'http://localhost:5173'
+          # - !Sub 'https://${S3WebsiteStack.Outputs.CloudfrontEndpoint}'
+          # - !Sub 'https://${S3WebsiteStack.Outputs.FullDomain}'
         AllowHeaders:
-          - '*'
+          - Authorization
+          - Origin
+          - 'Content-Type'
+          - Accept
         AllowMethods:
           - DELETE
           - GET
@@ -186,7 +191,7 @@ Resources:
         ExposeHeaders:
           - '*'
         MaxAge: 600
-        AllowCredentials: True
+        AllowCredentials: true
 
   ApiFunction:
     Type: AWS::Serverless::Function
@@ -287,8 +292,11 @@ Resources:
         - openid
         - profile
         - email
+        - api://redirectr-api/urls.read
+        - api://redirectr-api/urls.write
       AllowedOAuthFlows:
         - code
+        - implicit
       ExplicitAuthFlows:
         - ALLOW_CUSTOM_AUTH
         - ALLOW_USER_PASSWORD_AUTH

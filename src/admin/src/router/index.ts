@@ -19,18 +19,17 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: LogIn,
+      // Make sure this does not get the `requireAuth` meta property
     },
     {
       path: '/oidc-callback',
       name: 'oidc-callback',
       component: OidcCallback,
+      // Make sure this does not get the `requireAuth` meta property
     },
     {
       path: '/about',
       name: 'about',
-      // route level code-splitting
-      // this generates a separate chunk (About.[hash].js) for this route
-      // which is lazy-loaded when the route is visited.
       component: () => import('../views/AboutView.vue')
     }
   ]

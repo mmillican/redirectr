@@ -12,7 +12,6 @@ const authService = new AuthService();
 
 onMounted(async() => {
   await authService.handleLoginCallback();
+  router.push('/');
 });
-
-router.push('/');
 </script>
